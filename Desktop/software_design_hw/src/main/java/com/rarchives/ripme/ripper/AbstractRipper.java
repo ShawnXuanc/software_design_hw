@@ -81,21 +81,9 @@ public abstract class AbstractRipper
         try {
             File file = new File(URLHistoryFile);
             File dirFile = new File(Utils.getConfigDir());
+            
+            if (!checkDirFileExists(dirFile) || !checkFileExists(file) || checkWriteFile(file)) return ;
 
-            // dirFile does not exist, create
-            if (!checkDirFileExists(dirFile)) {
-                LOGGER.error("Couldn't make config dir");
-                return ;
-            }
-            // if file does not exist, then create it
-            if (!checkFileExists(file)) {
-               return ;
-            }
-            // check file can write
-            if (!file.canWrite()) {
-                LOGGER.error("Can't write to url history file: " + URLHistoryFile);
-                return;
-            }
             try (BufferedWriter bufferWriter = new BufferedWriter(new FileWriter(file.getAbsoluteFile(), true))) {
                 bufferWriter.write(downloadedURL);
             }
@@ -115,13 +103,20 @@ public abstract class AbstractRipper
         return new File(Utils.getConfigDir()).exists();
     }
 
-
+    private boolean checkWriteFile(File file) {
+        if (!file.canWrite()) {
+            LOGGER.error("Can't write to url history file: " + URLHistoryFile);
+            return false;
+        }
+        return true;
+    }
     private boolean checkDirFileExists(File dirFile) {
         if (!dirFile.exists()) {
             LOGGER.error("Config dir doesn't exist");
             LOGGER.info("Making config dir");
             return dirFile.mkdirs();
         }
+        LOGGER.error("Couldn't make config dir");
         return true;
     }
 
@@ -299,8 +294,8 @@ public abstract class AbstractRipper
      */
     protected boolean addURLToDownload(URL url, String prefix, String subdirectory, String referrer, Map<String, String> cookies, String fileName, String extension, Boolean getFileExtFromMIME) {
         // A common bug is rippers adding urls that are just "http:". This rejects said urls
-        if (url.toExternalForm().equals("http:") || url.toExternalForm().equals("https:")) {
-            LOGGER.info(url.toExternalForm() + " is a invalid url amd will be changed");
+        if (checkValidUrl(url)) {
+            LOGGER.info(url.toExternalForm() + " is a invalid url and will be changed");
             return false;
 
         }
@@ -365,6 +360,10 @@ public abstract class AbstractRipper
             }
         }
         return addURLToDownload(url, saveFileAs, referrer, cookies, getFileExtFromMIME);
+    }
+
+    private static boolean checkValidUrl(URL url) {
+        return url.toExternalForm().equals("http:") || url.toExternalForm().equals("https:");
     }
 
     protected boolean addURLToDownload(URL url, String prefix, String subdirectory, String referrer, Map<String,String> cookies, String fileName, String extension) {
