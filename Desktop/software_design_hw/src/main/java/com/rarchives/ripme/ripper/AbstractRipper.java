@@ -81,8 +81,8 @@ public abstract class AbstractRipper
         try {
             File file = new File(URLHistoryFile);
             File dirFile = new File(Utils.getConfigDir());
-            
-            if (!checkDirFileExists(dirFile) || !checkFileExists(file) || checkWriteFile(file)) return ;
+
+            if (!checkDirFileExists(dirFile) || !checkFileExists(file) || !checkWriteFile(file)) return ;
 
             try (BufferedWriter bufferWriter = new BufferedWriter(new FileWriter(file.getAbsoluteFile(), true))) {
                 bufferWriter.write(downloadedURL);
