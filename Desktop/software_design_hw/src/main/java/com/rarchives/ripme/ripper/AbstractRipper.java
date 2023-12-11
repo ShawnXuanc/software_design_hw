@@ -50,12 +50,15 @@ public abstract class AbstractRipper
     private boolean shouldStop = false;
     private static boolean thisIsATest = false;
 
+
     public void stop() {
         shouldStop = true;
     }
+
     public boolean isStopped() {
         return shouldStop;
     }
+
     protected void stopCheck() throws IOException {
         if (shouldStop) {
             throw new IOException("Ripping interrupted");
@@ -67,54 +70,74 @@ public abstract class AbstractRipper
      * Adds a URL to the url history file
      * @param downloadedURL URL to check if downloaded
      */
+
     protected void writeDownloadedURL(String downloadedURL) throws IOException {
         // If "save urls only" is checked don't write to the url history file
-        if (Utils.getConfigBoolean("urls_only.save", false)) {
+        if (isUrlsOnly()) {
             return;
         }
         downloadedURL = normalizeUrl(downloadedURL);
-        BufferedWriter bw = null;
-        FileWriter fw = null;
+
         try {
             File file = new File(URLHistoryFile);
-            if (!new File(Utils.getConfigDir()).exists()) {
-                LOGGER.error("Config dir doesn't exist");
-                LOGGER.info("Making config dir");
-                boolean couldMakeDir = new File(Utils.getConfigDir()).mkdirs();
-                if (!couldMakeDir) {
-                    LOGGER.error("Couldn't make config dir");
-                    return;
-                }
+            File dirFile = new File(Utils.getConfigDir());
+
+            // dirFile does not exist, create
+            if (!checkDirFileExists(dirFile)) {
+                LOGGER.error("Couldn't make config dir");
+                return ;
             }
-            // if file doesnt exists, then create it
-            if (!file.exists()) {
-                boolean couldMakeDir = file.createNewFile();
-                if (!couldMakeDir) {
-                    LOGGER.error("Couldn't url history file");
-                    return;
-                }
+            // if file does not exist, then create it
+            if (!checkFileExists(file)) {
+               return ;
             }
+            // check file can write
             if (!file.canWrite()) {
                 LOGGER.error("Can't write to url history file: " + URLHistoryFile);
                 return;
             }
-            fw = new FileWriter(file.getAbsoluteFile(), true);
-            bw = new BufferedWriter(fw);
-            bw.write(downloadedURL);
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                if (bw != null)
-                    bw.close();
-                if (fw != null)
-                    fw.close();
-            } catch (IOException ex) {
-                ex.printStackTrace();
+            try (BufferedWriter bufferWriter = new BufferedWriter(new FileWriter(file.getAbsoluteFile(), true))) {
+                bufferWriter.write(downloadedURL);
             }
+
+        } catch (IOException e) {
+            LOGGER.error("Error writing to file", e);
+
         }
+
     }
 
+    private static boolean isUrlsOnly() {
+        return Utils.getConfigBoolean("urls_only.save", false);
+    }
+
+    private static boolean isDirExists() {
+        return new File(Utils.getConfigDir()).exists();
+    }
+
+
+    private boolean checkDirFileExists(File dirFile) {
+        if (!dirFile.exists()) {
+            LOGGER.error("Config dir doesn't exist");
+            LOGGER.info("Making config dir");
+            return dirFile.mkdirs();
+        }
+        return true;
+    }
+
+    private boolean checkFileExists(File file) {
+        if (!file.exists()) {
+            LOGGER.error("File doesn't exist: ");
+            LOGGER.info("Making file");
+            try {
+                return file.createNewFile();
+            } catch (IOException e) {
+                LOGGER.error("Couldn't create file", e);
+                return false;
+            }
+        }
+        return false;
+    }
 
     /**
      * Normalize a URL
@@ -489,7 +512,7 @@ public abstract class AbstractRipper
                 fa.setFile("ripme.log");
                 fa.activateOptions();
             }
-            if (Utils.getConfigBoolean("urls_only.save", false)) {
+            if (isUrlsOnly()) {
                 String urlFile = this.workingDir + File.separator + "urls.txt";
                 try {
                     Desktop.getDesktop().open(new File(urlFile));
@@ -679,4 +702,6 @@ public abstract class AbstractRipper
     protected boolean useByteProgessBar() { return false;}
     // If true ripme will try to resume a broken download for this ripper
     protected boolean tryResumeDownload() { return false;}
+
+
 }
