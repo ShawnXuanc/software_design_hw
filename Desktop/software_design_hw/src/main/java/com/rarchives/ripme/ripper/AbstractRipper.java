@@ -90,7 +90,6 @@ public abstract class AbstractRipper
 
         } catch (IOException e) {
             LOGGER.error("Error writing to file", e);
-
         }
 
     }
@@ -110,6 +109,7 @@ public abstract class AbstractRipper
         }
         return true;
     }
+
     private boolean checkDirFileExists(File dirFile) {
         if (!dirFile.exists()) {
             LOGGER.error("Config dir doesn't exist");
@@ -149,17 +149,13 @@ public abstract class AbstractRipper
      *      Returns true if previously downloaded.
      *      Returns false if not yet downloaded.
      */
+
     protected boolean hasDownloadedURL(String url) {
         File file = new File(URLHistoryFile);
         url = normalizeUrl(url);
 
         try (Scanner scanner = new Scanner(file)) {
-            while (scanner.hasNextLine()) {
-                final String lineFromFile = scanner.nextLine();
-                if (lineFromFile.equals(url)) {
-                    return true;
-                }
-            }
+            if (matchUrl(scanner, url)) return true;
         } catch (FileNotFoundException e) {
             return false;
         }
@@ -167,6 +163,15 @@ public abstract class AbstractRipper
         return false;
     }
 
+    private boolean matchUrl(Scanner scanner, String url) {
+        while (scanner.hasNextLine()) {
+            final String lineFromFile = scanner.nextLine();
+            if (lineFromFile.equals(url)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * Ensures inheriting ripper can rip this URL, raises exception if not.
@@ -299,59 +304,63 @@ public abstract class AbstractRipper
             return false;
 
         }
+        
+        String urlString = url.toExternalForm();
         // Make sure the url doesn't contain any spaces as that can cause a 400 error when requesting the file
-        if (url.toExternalForm().contains(" ")) {
-            // If for some reason the url with all spaces encoded as %20 is malformed print an error
-            try {
-                url = new URL(url.toExternalForm().replaceAll(" ", "%20"));
-            } catch (MalformedURLException e) {
-                LOGGER.error("Unable to remove spaces from url\nURL: " + url.toExternalForm());
-                e.printStackTrace();
-            }
-        }
+        url = removeUrlSpace(url, urlString);
+
+
         // Don't re-add the url if it was downloaded in a previous rip
-        if (Utils.getConfigBoolean("remember.url_history", true) && !isThisATest()) {
-            if (hasDownloadedURL(url.toExternalForm())) {
-                sendUpdate(STATUS.DOWNLOAD_WARN, "Already downloaded " + url.toExternalForm());
-                alreadyDownloadedUrls += 1;
-                return false;
-            }
-        }
+        if (checkReAdd(url)) return false;
+
         try {
             stopCheck();
         } catch (IOException e) {
             LOGGER.debug("Ripper has been stopped");
             return false;
         }
+        
         LOGGER.debug("url: " + url + ", prefix: " + prefix + ", subdirectory" + subdirectory + ", referrer: " + referrer + ", cookies: " + cookies + ", fileName: " + fileName);
         String saveAs = getFileName(url, fileName, extension);
         File saveFileAs;
         try {
-            if (!subdirectory.equals("")) {
-                subdirectory = Utils.filesystemSafe(subdirectory);
-                subdirectory = File.separator + subdirectory;
-            }
-            prefix = Utils.filesystemSanitized(prefix);
-            String topFolderName = workingDir.getCanonicalPath();
-            if (App.stringToAppendToFoldername != null) {
-                topFolderName = topFolderName + App.stringToAppendToFoldername;
-            }
-            saveFileAs = new File(
-                    topFolderName
-                    + subdirectory
-                    + File.separator
-                    + prefix
-                    + saveAs);
+            saveFileAs = saveFile(prefix, subdirectory, saveAs);
         } catch (IOException e) {
             LOGGER.error("[!] Error creating save file path for URL '" + url + "':", e);
             return false;
         }
-        LOGGER.debug("Downloading " + url + " to " + saveFileAs);
-        if (!saveFileAs.getParentFile().exists()) {
-            LOGGER.info("[+] Creating directory: " + Utils.removeCWD(saveFileAs.getParent()));
-            saveFileAs.getParentFile().mkdirs();
+
+        checkParentFile(url, saveFileAs);
+
+        // duplicated need revised
+        revisedDuplicated(url);
+        return addURLToDownload(url, saveFileAs, referrer, cookies, getFileExtFromMIME);
+    }
+
+    private boolean checkReAdd(URL url) {
+        if (checkReAddUrl() && hasDownloadURL(url)) {
+            sendUpdate(STATUS.DOWNLOAD_WARN, "Already downloaded " + url.toExternalForm());
+            alreadyDownloadedUrls ++;
+            return true;
+
         }
-        if (Utils.getConfigBoolean("remember.url_history", true) && !isThisATest()) {
+        return false;
+    }
+
+    private static URL removeUrlSpace(URL url, String urlString) {
+        try {
+            if (urlString.contains(" ")) {
+                url = new URL(urlString.replaceAll(" ", "%20"));
+            }
+        } catch (MalformedURLException e) {
+            LOGGER.error("Unable to remove spaces from url\nURL: " + url.toExternalForm());
+            e.printStackTrace();
+        }
+        return url;
+    }
+
+    private void revisedDuplicated(URL url) {
+        if (checkReAddUrl()) {
             LOGGER.info("Writing " + url.toExternalForm() + " to file");
             try {
                 writeDownloadedURL(url.toExternalForm() + "\n");
@@ -359,7 +368,36 @@ public abstract class AbstractRipper
                 LOGGER.debug("Unable to write URL history file");
             }
         }
-        return addURLToDownload(url, saveFileAs, referrer, cookies, getFileExtFromMIME);
+    }
+
+    private static void checkParentFile(URL url, File saveFileAs) {
+        LOGGER.debug("Downloading " + url + " to " + saveFileAs);
+        if (!saveFileAs.getParentFile().exists()) {
+            LOGGER.info("[+] Creating directory: " + Utils.removeCWD(saveFileAs.getParent()));
+            saveFileAs.getParentFile().mkdirs();
+        }
+    }
+
+    private File saveFile(String prefix, String subdirectory, String saveAs) throws IOException {
+        File saveFileAs;
+        subdirectory = !subdirectory.isEmpty() ? File.separator + Utils.filesystemSafe(subdirectory) : "" ;
+        prefix = Utils.filesystemSanitized(prefix);
+        String topFolderName = workingDir.getCanonicalPath() + (App.stringToAppendToFoldername != null ? App.stringToAppendToFoldername: "");
+        saveFileAs = new File(
+                topFolderName
+                + subdirectory
+                + File.separator
+                + prefix
+                + saveAs);
+        return saveFileAs;
+    }
+
+    private boolean hasDownloadURL(URL url) {
+        return hasDownloadedURL(url.toExternalForm());
+    }
+
+    private static boolean checkReAddUrl() {
+        return Utils.getConfigBoolean("remember.url_history", true) && !isThisATest();
     }
 
     private static boolean checkValidUrl(URL url) {
@@ -408,34 +446,44 @@ public abstract class AbstractRipper
 
     public static String getFileName(URL url, String fileName, String extension) {
         String saveAs;
-        if (fileName != null) {
-            saveAs = fileName;
-        } else {
-            saveAs = url.toExternalForm();
-            saveAs = saveAs.substring(saveAs.lastIndexOf('/')+1);
-        }
+        saveAs = checkNullOfFileName(url, fileName);
         if (extension == null) {
             // Get the extension of the file
-            String[] lastBitOfURL = url.toExternalForm().split("/");
+            extension = getExtension(url, extension);
+            saveAs = getExtensionFileName(extension, saveAs);
+        }
 
-            String[] lastBit = lastBitOfURL[lastBitOfURL.length - 1].split(".");
-            if (lastBit.length != 0) {
-                extension = lastBit[lastBit.length - 1];
-                saveAs = saveAs + "." + extension;
+        String[] removeC = {"?", "#", "&", ":"};
+        for (String c : removeC) {
+            int index = saveAs.indexOf(c);
+            if (index >= 0) {
+                saveAs = saveAs.substring(0, index);
             }
         }
 
-        if (saveAs.indexOf('?') >= 0) { saveAs = saveAs.substring(0, saveAs.indexOf('?')); }
-        if (saveAs.indexOf('#') >= 0) { saveAs = saveAs.substring(0, saveAs.indexOf('#')); }
-        if (saveAs.indexOf('&') >= 0) { saveAs = saveAs.substring(0, saveAs.indexOf('&')); }
-        if (saveAs.indexOf(':') >= 0) { saveAs = saveAs.substring(0, saveAs.indexOf(':')); }
-        if (extension != null) {
-            saveAs = saveAs + "." + extension;
-        }
+        saveAs = (extension != null) ? getExtensionFileName(extension, saveAs): saveAs;
+
         return saveAs;
     }
 
+    private static String getExtensionFileName(String extension, String saveAs) {
+        return saveAs + "." + extension;
+    }
 
+    private static String checkNullOfFileName(URL url, String fileName) {
+        String saveAs = null;
+        return saveAs = fileName != null ? fileName : url.toExternalForm().substring(saveAs.lastIndexOf('/')+1);
+    }
+
+    private static String getExtension(URL url, String extension) {
+        String[] lastBitOfURL = url.toExternalForm().split("/");
+        String[] lastBit = lastBitOfURL[lastBitOfURL.length - 1].split(".");
+        if (lastBit.length != 0) {
+            extension = lastBit[lastBit.length - 1];
+            return extension;
+        }
+        return null;
+    }
     /**
      * Waits for downloading threads to complete.
      */
