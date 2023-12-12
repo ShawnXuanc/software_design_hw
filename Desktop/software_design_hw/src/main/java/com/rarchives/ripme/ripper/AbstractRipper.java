@@ -544,30 +544,47 @@ public abstract class AbstractRipper
             return;
         }
 
+        checkRipComplete();
+    }
+
+    private void checkRipComplete() {
         if (!completed) {
             completed = true;
-            LOGGER.info("   Rip completed!");
+            LOGGER.info("Rip completed!");
 
-            RipStatusComplete rsc = new RipStatusComplete(workingDir, getCount());
-            RipStatusMessage msg = new RipStatusMessage(STATUS.RIP_COMPLETE, rsc);
-            observer.update(this, msg);
+            updateOberver();
 
-            Logger rootLogger = Logger.getRootLogger();
-            FileAppender fa = (FileAppender) rootLogger.getAppender("FILE");
-            if (fa != null) {
-                LOGGER.debug("Changing log file back to 'ripme.log'");
-                fa.setFile("ripme.log");
-                fa.activateOptions();
-            }
-            if (isUrlsOnly()) {
-                String urlFile = this.workingDir + File.separator + "urls.txt";
-                try {
-                    Desktop.getDesktop().open(new File(urlFile));
-                } catch (IOException e) {
-                    LOGGER.warn("Error while opening " + urlFile, e);
-                }
+            setLogFile();
+
+            openUrlFile();
+        }
+    }
+
+    private void openUrlFile() {
+        if (isUrlsOnly()) {
+            String urlFile = this.workingDir + File.separator + "urls.txt";
+            try {
+                Desktop.getDesktop().open(new File(urlFile));
+            } catch (IOException e) {
+                LOGGER.warn("Error while opening " + urlFile, e);
             }
         }
+    }
+
+    private static void setLogFile() {
+        Logger rootLogger = Logger.getRootLogger();
+        FileAppender fa = (FileAppender) rootLogger.getAppender("FILE");
+        if (fa != null) {
+            LOGGER.debug("Changing log file back to 'ripme.log'");
+            fa.setFile("ripme.log");
+            fa.activateOptions();
+        }
+    }
+
+    private void updateOberver() {
+        RipStatusComplete rsc = new RipStatusComplete(workingDir, getCount());
+        RipStatusMessage msg = new RipStatusMessage(STATUS.RIP_COMPLETE, rsc);
+        observer.update(this, msg);
     }
 
     /**
